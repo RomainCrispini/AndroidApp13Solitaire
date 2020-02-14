@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#008577</color>
-    <color name="colorPrimaryDark">#00574B</color>
-    <color name="colorAccent">#D81B60</color>
+    <!-- Pour les couleurs utilisées par la barre de notification -->
+    <color name="colorPrimary">#000000</color>
+    <color name="colorPrimaryDark">#000000</color>
+    <color name="colorAccent">#e61408</color>
+
+    <!-- Les couleurs utilisées par l'application -->
+    <color name="headerForegroundColor">#e0e0e0</color>
+    <color name="backgroundColor">#018786</color>
+    <color name="redColor">#e61408</color>
 </resources>
