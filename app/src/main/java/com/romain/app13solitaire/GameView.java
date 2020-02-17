@@ -9,14 +9,18 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.GestureDetector;
+
+import java.util.ArrayList;
 
 /**
  * Classe de base de tout objet graphique en Android
  * GameView est une View
  *
  */
-public class GameView extends View {
+public class GameView extends View implements GestureDetector.OnGestureListener{
 
     private int headerBackgroundColor;
     private int headerForegroundColor;
@@ -40,6 +44,8 @@ public class GameView extends View {
     private float deckHeight;
     private float deckMargin;
 
+    private GestureDetector gestureDetector;
+
 
     /**
      * Class constructor
@@ -61,6 +67,8 @@ public class GameView extends View {
      * Chargement des codes couleurs.
      */
     private void postConstruct() {
+        gestureDetector = new GestureDetector(getContext(), this);
+
         Resources res = getResources();
         headerBackgroundColor = res.getColor( R.color.colorPrimaryDark );
         headerForegroundColor = res.getColor( R.color.headerForegroundColor );
@@ -273,7 +281,7 @@ public class GameView extends View {
         canvas.drawText( "V 1.0", (int) (widthDiv10 * 0.5), (int) (heightDiv10 * 1.3), paint );
 
         paint.setTextAlign( Paint.Align.RIGHT );
-        canvas.drawText( "By KooR.fr", (int) (widthDiv10 * 9.5), (int) (heightDiv10 * 1.3), paint );
+        canvas.drawText( "", (int) (widthDiv10 * 9.5), (int) (heightDiv10 * 1.3), paint );
 
 
         // --- Draw the fourth stacks ---
@@ -309,6 +317,141 @@ public class GameView extends View {
             }
 
         }
+    }
+
+    // --- OnGestureDetector interface ----
+
+    // C'est onTouchEvent qui doit recevoir les infos, mais c'est le gestureDetector qui va les traiter
+    // Tout les evts suivants seront gérés par le gestureDetector
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        return gestureDetector.onTouchEvent(event);     // Le widget repasse la main au GestureDetector.
+    }
+
+    // On réagit à un appui simple sur le widget.
+    @Override
+    public boolean onSingleTapUp(MotionEvent e) {
+
+        RectF rect;
+
+        // --- Un tap sur les cartes non retournées de la pioche ---
+        rect = computePiocheRect();
+        if ( rect.contains( e.getX(), e.getY() ) ) {
+            if ( ! game.pioche.isEmpty() ) {
+                Card card = game.pioche.remove(0);
+                card.setReturned( true );
+                game.returnedPioche.add( card );
+            } else {
+                game.pioche.addAll( game.returnedPioche );
+                game.returnedPioche.clear();
+                for( Card card : game.pioche ) card.setReturned( false );
+            }
+            // On force la réactualisation de l'écran graphique car même si l'action a lieu, sans cette ligne,
+            // elle sera invisible. En fait, on demande un retracé
+            postInvalidate();
+            return true;
+        }
+
+        // --- Un tap sur les cartes retournées de la pioche ---
+        rect = computeReturnedPiocheRect();
+        if ( rect.contains( e.getX(), e.getY() ) && ! game.returnedPioche.isEmpty() ) {
+            final int stackIndex = game.canMoveCardToStack( game.returnedPioche.lastElement() );
+            if ( stackIndex > -1 ) {
+                Card selectedCard = game.returnedPioche.remove(game.returnedPioche.size() - 1);
+                game.stacks[stackIndex].add( selectedCard );
+                postInvalidate();
+                return true;
+            }
+
+            final int deckIndex = game.canMoveCardToDeck( game.returnedPioche.lastElement() );
+            if ( deckIndex > -1 ) {
+                Card selectedCard = game.returnedPioche.remove( game.returnedPioche.size() - 1 );
+                game.decks[deckIndex].add( selectedCard );
+                postInvalidate();
+                return true;
+            }
+        }
+
+        // --- Un tap sur une carte d'un deck ---
+        for( int deckIndex=0; deckIndex<Game.DECK_COUNT; deckIndex++ ) {
+            final Game.Deck deck = game.decks[deckIndex];
+            if ( ! deck.isEmpty() ) {
+                for( int i=deck.size() - 1; i >= 0; i-- ) {
+                    rect = computeDeckRect(deckIndex, i);
+                    if ( rect.contains(e.getX(), e.getY()) ) {
+                        // Click sur carte non retournée de la deck => on sort
+                        Card currentCard = deck.get(i);
+                        if ( ! currentCard.isReturned() ) return true;
+
+                        // Peut-on déplacer la carte du sommet du deck vers un stack ?
+                        if ( i == deck.size() - 1 ) {       // On vérifie de bien être sur le sommet
+                            int stackIndex = game.canMoveCardToStack(currentCard);
+                            if (stackIndex > -1) {
+                                Card selectedCard = deck.remove(deck.size() - 1);
+                                if ( ! deck.isEmpty() ) deck.lastElement().setReturned(true);
+                                game.stacks[stackIndex].add( selectedCard );
+                                postInvalidate();
+                                return true;
+                            }
+                        }
+
+                        // Peut-on déplacer la carte de la deck vers un autre deck ?
+                        final int deckIndex2 = game.canMoveCardToDeck( currentCard );
+                        if (deckIndex2 > -1) {
+                            if ( i == deck.size() - 1 ) {
+                                // On déplace qu'un carte
+                                Card selectedCard = deck.remove(deck.size() - 1);
+                                if ( ! deck.isEmpty() ) {
+                                    deck.lastElement().setReturned(true);
+                                }
+                                game.decks[deckIndex2].add( selectedCard );
+                            } else {
+                                // On déplace plusieurs cartes
+                                final ArrayList<Card> selectedCards = new ArrayList<>();
+                                for( int ci=deck.size()-1; ci>=i; ci-- ) {
+                                    selectedCards.add( 0, deck.remove( ci ) );
+                                }
+                                if ( ! deck.isEmpty() ) {
+                                    deck.lastElement().setReturned(true);
+                                }
+                                game.decks[deckIndex2].addAll( selectedCards );
+                            }
+                            postInvalidate();
+                            return true;
+                        }
+
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    @Override
+    public boolean onDown(MotionEvent e) {
+        return true;
+    }
+
+    @Override
+    public void onShowPress(MotionEvent e) {
+
+    }
+
+    @Override
+    public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+        return false;
+    }
+
+    @Override
+    public void onLongPress(MotionEvent e) {
+
+    }
+
+    @Override
+    public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+        return false;
     }
 
 }
